@@ -23,6 +23,7 @@ torchrun --nproc_per_node=8 src/train/train.py \
   --cache-pattern "train-*.tar" \
   --run-dir "$RUN_DIR" \
   --empty-context "$ROOT/cache/prompts/empty.safetensors" \
+  --from-scratch \
   --max-steps "${MAX_STEPS:-2000}" \
   --batch-size 1 \
   --grad-accum-steps 8 \
@@ -33,7 +34,6 @@ torchrun --nproc_per_node=8 src/train/train.py \
   --clip-grad-norm 1.0 \
   --cfg-dropout 0.10 \
   --save-every 500 \
-  --val-every 500 \
+  --val-every 0 \
   --val-batches 512 \
   --no-tiny-model
-

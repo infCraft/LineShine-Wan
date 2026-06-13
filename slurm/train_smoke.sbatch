@@ -23,6 +23,7 @@ python src/train/train.py \
   --cache-pattern "smoke_real-*.tar" \
   --run-dir "$RUN_DIR" \
   --empty-context "$ROOT/cache/prompts/empty.safetensors" \
+  --from-scratch \
   --max-steps "${MAX_STEPS:-20}" \
   --batch-size 1 \
   --save-every "${SAVE_EVERY:-10}" \
@@ -31,4 +32,3 @@ python src/train/train.py \
   --tiny-ffn-dim 512 \
   --tiny-heads 4 \
   --tiny-layers 2
-

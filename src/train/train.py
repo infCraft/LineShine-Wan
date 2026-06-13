@@ -162,6 +162,11 @@ def train(args: argparse.Namespace) -> None:
     distributed, rank, world, local_rank = init_distributed()
     device = torch.device(f"cuda:{local_rank}" if torch.cuda.is_available() and not args.cpu else "cpu")
     torch.manual_seed(args.seed + rank)
+    if distributed and args.val_every > 0:
+        raise RuntimeError(
+            "DDP validation is disabled in this training loop because rank0-only evaluation would deadlock. "
+            "Use --val-every 0 or implement synchronized validation first."
+        )
 
     dataset = make_dataset(args)
     sampler = DistributedSampler(dataset, num_replicas=world, rank=rank, shuffle=True) if distributed else None
@@ -197,14 +202,22 @@ def train(args: argparse.Namespace) -> None:
             dtype=torch.bfloat16,
             generator=gen,
         )
-    ensure_dir(args.run_dir)
-    if rank == 0:
-        write_json(args.run_dir / "train_config.json", vars(args))
-
     start_step = 0
-    ckpt = args.resume or latest_checkpoint(args.run_dir)
+    ensure_dir(args.run_dir)
+    latest_ckpt = latest_checkpoint(args.run_dir)
+    if args.from_scratch and (args.resume is not None or args.auto_resume):
+        raise ValueError("--from-scratch cannot be combined with --resume or --auto-resume")
+    if args.from_scratch and latest_ckpt is not None:
+        raise RuntimeError(f"--from-scratch refused to use non-empty checkpoint directory: {latest_ckpt}")
+    ckpt = args.resume or (latest_ckpt if args.auto_resume else None)
+    args.init_source = "random"
+    args.loaded_checkpoint = None
     if ckpt is not None and ckpt.exists():
         start_step = load_checkpoint(ckpt, model=model, optimizer=optimizer, scheduler=scheduler, map_location=device)
+        args.init_source = "checkpoint"
+        args.loaded_checkpoint = str(ckpt)
+    if rank == 0:
+        write_json(args.run_dir / "train_config.json", vars(args))
 
     step = start_step
     accum = 0
@@ -285,6 +298,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--run-dir", type=Path, default=root / "runs/smoke_train")
     parser.add_argument("--empty-context", type=Path)
     parser.add_argument("--resume", type=Path)
+    parser.add_argument("--auto-resume", action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument("--from-scratch", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--max-steps", type=int, default=20)
     parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument("--grad-accum-steps", type=int, default=1)
