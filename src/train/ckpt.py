@@ -94,7 +94,16 @@ def save_checkpoint(
     return path
 
 
-def load_checkpoint(path: Path, *, model, optimizer=None, scheduler=None, scaler=None, map_location="cpu") -> int:
+def load_checkpoint(
+    path: Path,
+    *,
+    model,
+    optimizer=None,
+    scheduler=None,
+    scaler=None,
+    map_location="cpu",
+    restore_rng: bool = True,
+) -> int:
     data = torch.load(path, map_location=map_location, weights_only=False)
     module = model.module if hasattr(model, "module") else model
     module.load_state_dict(data["model"])
@@ -104,8 +113,8 @@ def load_checkpoint(path: Path, *, model, optimizer=None, scheduler=None, scaler
         scheduler.load_state_dict(data["scheduler"])
     if scaler is not None and data.get("scaler") is not None:
         scaler.load_state_dict(data["scaler"])
-    if data.get("rng_cpu") is not None:
+    if restore_rng and data.get("rng_cpu") is not None:
         torch.set_rng_state(data["rng_cpu"].cpu())
-    if torch.cuda.is_available() and data.get("rng_cuda") is not None:
+    if restore_rng and torch.cuda.is_available() and data.get("rng_cuda") is not None:
         torch.cuda.set_rng_state_all([state.cpu() for state in data["rng_cuda"]])
     return int(data.get("step", 0))

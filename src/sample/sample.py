@@ -66,7 +66,7 @@ def sample(args: argparse.Namespace) -> None:
     model = create_model(args).to(device).eval()
     ckpt = args.checkpoint or latest_checkpoint(args.run_dir)
     if ckpt is not None and ckpt.exists():
-        load_checkpoint(ckpt, model=model, map_location=device)
+        load_checkpoint(ckpt, model=model, map_location=device, restore_rng=False)
 
     context = load_prompt_context(args.prompt_dir, args.prompt_name, device)
     empty = load_prompt_context(args.prompt_dir, args.empty_name, device)

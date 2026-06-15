@@ -30,6 +30,19 @@ def test_save_checkpoint_skips_existing_step_and_keeps_latest(tmp_path, monkeypa
     assert ckpt.load_checkpoint(first, model=model, optimizer=optimizer) == 1
 
 
+def test_load_checkpoint_can_skip_rng_restore(tmp_path, monkeypatch):
+    model = torch.nn.Linear(2, 2)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
+    args = SimpleNamespace(run_dir=tmp_path, note="unit")
+    path = ckpt.save_checkpoint(tmp_path, step=3, model=model, optimizer=optimizer, scaler=None, args=args)
+
+    calls = []
+    monkeypatch.setattr(ckpt.torch, "set_rng_state", lambda state: calls.append(state))
+
+    assert ckpt.load_checkpoint(path, model=model, optimizer=optimizer, restore_rng=False) == 3
+    assert calls == []
+
+
 def test_atomic_torch_save_does_not_leave_target_on_failure(tmp_path, monkeypatch):
     target = tmp_path / "state.pt"
 
