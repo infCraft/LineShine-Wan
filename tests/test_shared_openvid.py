@@ -2,7 +2,7 @@ import json
 import zipfile
 from pathlib import Path
 
-from src.data.shared_openvid import manifest_candidates, scan_shared_parts, select_smoke_rows
+from src.data.shared_openvid import freeze_shared_split, manifest_candidates, scan_shared_parts, select_smoke_rows
 
 
 def test_scan_shared_parts_ignores_hidden_and_temp(tmp_path: Path):
@@ -39,3 +39,35 @@ def test_manifest_candidates_and_smoke_selection(tmp_path: Path):
     assert [r["video"] for r in candidates] == ["b.mp4", "a.mp4"]
     assert smoke[0]["video"] == "b.mp4"
 
+
+
+def test_freeze_shared_split_keeps_source_groups_intact():
+    groups = [
+        ("a", 2, 1.00),
+        ("b", 2, 0.90),
+        ("c", 2, 0.80),
+        ("d", 2, 0.70),
+        ("e", 1, 0.60),
+        ("f", 1, 0.50),
+    ]
+    candidates = []
+    for source, count, base_score in groups:
+        for idx in range(count):
+            candidates.append(
+                {
+                    "sample_id": f"{source}-{idx}",
+                    "video": f"{source}-{idx}.mp4",
+                    "part": "OpenVid_part1.zip",
+                    "source_id": source,
+                    "quality_score": base_score - idx * 0.01,
+                }
+            )
+
+    train, val = freeze_shared_split(candidates, train_count=7, val_count=3, min_candidates=10)
+
+    assert len(train) == 7
+    assert len(val) == 3
+    assert {row["sample_id"] for row in train}.isdisjoint({row["sample_id"] for row in val})
+    assert {row["source_id"] for row in train}.isdisjoint({row["source_id"] for row in val})
+    assert {row["split"] for row in train} == {"train"}
+    assert {row["split"] for row in val} == {"val"}

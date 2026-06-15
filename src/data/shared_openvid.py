@@ -41,6 +41,11 @@ def part_num(part: str) -> int:
     return int(match.group(1))
 
 
+def row_source_id(row: dict[str, Any]) -> str:
+    value = row.get("source_id") or sample_id(row)
+    return str(value)
+
+
 def scan_shared_parts(shared_dir: Path) -> dict[str, dict[str, Any]]:
     """Return completed top-level shared parts. Hidden/temp files are ignored."""
     groups: dict[str, dict[str, Any]] = {}
@@ -104,7 +109,7 @@ def summarize_candidates(rows: Iterable[dict[str, Any]], shared_parts: dict[str,
             },
         )
         info["candidate_count"] += 1
-        source_ids.add(str(row.get("source_id", "")))
+        source_ids.add(row_source_id(row))
         sample_ids.add(sample_id(row))
     ranked = sorted(by_part.values(), key=lambda x: (-x["candidate_count"], x["part_num"]))
     return {
@@ -136,7 +141,7 @@ def select_smoke_rows(
     selected: list[dict[str, Any]] = []
     used_sources: set[str] = set()
     for row in rows:
-        source = str(row.get("source_id", ""))
+        source = row_source_id(row)
         if require_unique_source and source in used_sources:
             continue
         out = dict(row)
@@ -145,6 +150,39 @@ def select_smoke_rows(
         used_sources.add(source)
         if len(selected) >= limit:
             break
+    return selected
+
+
+def choose_validation_group_indices(groups: list[list[dict[str, Any]]], val_count: int) -> set[int]:
+    """Choose whole source groups for validation with an exact row count."""
+    if val_count < 0:
+        raise ValueError("val_count must be non-negative")
+    if val_count == 0:
+        return set()
+
+    reachable = {0}
+    predecessor: dict[int, tuple[int, int]] = {}
+    for idx, rows in enumerate(groups):
+        size = len(rows)
+        additions: list[tuple[int, int]] = []
+        for current in sorted(reachable, reverse=True):
+            new_total = current + size
+            if new_total > val_count or new_total in reachable or new_total in predecessor:
+                continue
+            additions.append((new_total, current))
+        for new_total, current in additions:
+            reachable.add(new_total)
+            predecessor[new_total] = (current, idx)
+        if val_count in reachable:
+            break
+    if val_count not in reachable:
+        raise RuntimeError(f"could not select whole source groups for val_count={val_count}")
+
+    selected: set[int] = set()
+    total = val_count
+    while total:
+        total, idx = predecessor[total]
+        selected.add(idx)
     return selected
 
 
@@ -161,7 +199,7 @@ def freeze_shared_split(
     target = train_count + val_count
     groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for row in candidates:
-        groups[str(row.get("source_id", sample_id(row)))].append(row)
+        groups[row_source_id(row)].append(row)
     ordered_groups = sorted(
         groups.values(),
         key=lambda rows: max(float(row.get("quality_score", 0.0)) for row in rows),
@@ -179,21 +217,33 @@ def freeze_shared_split(
     if len(selected) < target:
         raise RuntimeError(f"could only select {len(selected)} rows without source overlap; need {target}")
 
-    val_sources: set[str] = set()
+    selected_groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in selected:
+        selected_groups[row_source_id(row)].append(row)
+    low_quality_groups = sorted(
+        selected_groups.values(),
+        key=lambda rows: max(float(row.get("quality_score", 0.0)) for row in rows),
+    )
+    val_group_indices = choose_validation_group_indices(low_quality_groups, val_count)
+    val_sources = {row_source_id(row) for idx in val_group_indices for row in low_quality_groups[idx]}
+
     val: list[dict[str, Any]] = []
     train: list[dict[str, Any]] = []
-    for row in reversed(selected):
-        source = str(row.get("source_id", sample_id(row)))
-        if len(val) < val_count and source not in val_sources:
+    seen_samples: set[str] = set()
+    for row in selected:
+        sid = sample_id(row)
+        if sid in seen_samples:
+            raise RuntimeError(f"duplicate sample_id in selected split: {sid}")
+        seen_samples.add(sid)
+        if row_source_id(row) in val_sources:
             val.append(dict(row, split="val"))
-            val_sources.add(source)
         else:
             train.append(dict(row, split="train"))
     if len(val) != val_count or len(train) != train_count:
         raise RuntimeError(f"bad split sizes: train={len(train)} val={len(val)}")
     if {sample_id(r) for r in train} & {sample_id(r) for r in val}:
         raise RuntimeError("sample_id overlap between train and val")
-    if {str(r.get("source_id", "")) for r in train} & {str(r.get("source_id", "")) for r in val}:
+    if {row_source_id(r) for r in train} & {row_source_id(r) for r in val}:
         raise RuntimeError("source_id overlap between train and val")
     return train, val
 
