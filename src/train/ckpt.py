@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 from typing import Any
@@ -39,6 +40,27 @@ def latest_checkpoint(run_dir: Path) -> Path | None:
     return max(candidates)[1] if candidates else None
 
 
+def _replace_latest_symlink(ckpt_path: Path) -> None:
+    latest = ckpt_path.parent / "latest.pt"
+    tmp_latest = latest.with_name(f".{latest.name}.tmp.{os.getpid()}")
+    if tmp_latest.exists() or tmp_latest.is_symlink():
+        tmp_latest.unlink()
+    tmp_latest.symlink_to(ckpt_path.name)
+    os.replace(tmp_latest, latest)
+
+
+def atomic_torch_save(obj: Any, path: Path) -> Path:
+    ensure_dir(path.parent)
+    tmp_path = path.with_name(f".{path.name}.tmp.{os.getpid()}")
+    try:
+        torch.save(obj, tmp_path)
+        os.replace(tmp_path, path)
+    finally:
+        if tmp_path.exists():
+            tmp_path.unlink()
+    return path
+
+
 def save_checkpoint(
     run_dir: Path,
     *,
@@ -51,25 +73,24 @@ def save_checkpoint(
 ) -> Path:
     path = checkpoint_path(run_dir, step)
     ensure_dir(path.parent)
+    if path.exists():
+        _replace_latest_symlink(path)
+        return path
+
     module = model.module if hasattr(model, "module") else model
     raw_args = _jsonable(vars(args) if hasattr(args, "__dict__") else args)
-    torch.save(
-        {
-            "step": step,
-            "model": module.state_dict(),
-            "optimizer": optimizer.state_dict() if optimizer is not None else None,
-            "scheduler": scheduler.state_dict() if scheduler is not None else None,
-            "scaler": scaler.state_dict() if scaler is not None else None,
-            "args": raw_args,
-            "rng_cpu": torch.get_rng_state(),
-            "rng_cuda": torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None,
-        },
-        path,
-    )
-    latest = path.parent / "latest.pt"
-    if latest.exists() or latest.is_symlink():
-        latest.unlink()
-    latest.symlink_to(path.name)
+    payload = {
+        "step": step,
+        "model": module.state_dict(),
+        "optimizer": optimizer.state_dict() if optimizer is not None else None,
+        "scheduler": scheduler.state_dict() if scheduler is not None else None,
+        "scaler": scaler.state_dict() if scaler is not None else None,
+        "args": raw_args,
+        "rng_cpu": torch.get_rng_state(),
+        "rng_cuda": torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None,
+    }
+    atomic_torch_save(payload, path)
+    _replace_latest_symlink(path)
     return path
 
 

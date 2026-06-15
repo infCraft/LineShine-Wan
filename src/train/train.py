@@ -18,7 +18,7 @@ if __package__ is None or __package__ == "":
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from src.common import DEFAULT_ROOT, WAN_ROOT, ensure_dir, write_json
-from src.train.ckpt import latest_checkpoint, load_checkpoint, save_checkpoint
+from src.train.ckpt import atomic_torch_save, latest_checkpoint, load_checkpoint, save_checkpoint
 from src.train.dataset import CacheDataset, SyntheticDataset, collate_samples
 from src.train.flow import add_flow_noise, apply_cfg_dropout, sample_logit_normal_sigmas
 from src.train.metrics import JsonlMetrics, TbMetrics
@@ -283,7 +283,7 @@ def train(args: argparse.Namespace) -> None:
     if rank == 0:
         save_checkpoint(args.run_dir, step=step, model=model, optimizer=optimizer, scheduler=scheduler, scaler=None, args=args)
         module = model.module if hasattr(model, "module") else model
-        torch.save(module.state_dict(), args.run_dir / "wan_model_latest_state_dict.pt")
+        atomic_torch_save(module.state_dict(), args.run_dir / "wan_model_latest_state_dict.pt")
         tb.close()
         print(json.dumps({"step": step, "run_dir": str(args.run_dir)}, sort_keys=True))
     if distributed:
