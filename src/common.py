@@ -10,8 +10,17 @@ from pathlib import Path
 from typing import Any, Iterable, Iterator
 
 
-DEFAULT_ROOT = Path(os.environ.get("LINESHINE_ROOT", "/mnt/beegfs/home/huang_z/lineshine"))
-DEFAULT_CODE_ROOT = Path(os.environ.get("LINESHINE_CODE_ROOT", DEFAULT_ROOT / "code"))
+def _env_path(name: str, default: Path) -> Path:
+    value = os.environ.get(name)
+    return Path(value) if value else default
+
+
+DEFAULT_ROOT = _env_path("LINESHINE_ROOT", Path(__file__).resolve().parents[2])
+DEFAULT_CODE_ROOT = _env_path("LINESHINE_CODE_ROOT", DEFAULT_ROOT / "code")
+DEFAULT_SHARED_OPENVID_DIR = _env_path(
+    "LINESHINE_SHARED_OPENVID_DIR",
+    DEFAULT_ROOT / "external/openvid",
+)
 WAN_ROOT = DEFAULT_CODE_ROOT / "third_party" / "Wan2.1"
 
 

@@ -3,18 +3,21 @@
 #SBATCH --gres=gpu:8
 #SBATCH --cpus-per-gpu=8
 #SBATCH --mem=760G
-#SBATCH --output=/mnt/beegfs/home/huang_z/lineshine/reports/slurm/train_8gpu_%j.out
-#SBATCH --error=/mnt/beegfs/home/huang_z/lineshine/reports/slurm/train_8gpu_%j.err
+#SBATCH --output=../reports/slurm/train_8gpu_%j.out
+#SBATCH --error=../reports/slurm/train_8gpu_%j.err
 
 set -euo pipefail
 
-ROOT=${LINESHINE_ROOT:-/mnt/beegfs/home/huang_z/lineshine}
-CODE=$ROOT/code
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+ROOT=${LINESHINE_ROOT:-$(cd "$SCRIPT_DIR/../.." && pwd)}
+CODE=${LINESHINE_CODE_ROOT:-$ROOT/code}
 CACHE_DIR=${CACHE_DIR:-$ROOT/cache/train}
 RUN_DIR=${RUN_DIR:-$ROOT/runs/wan_t2v_1_3b_openvid_sanity}
+CONDA_SH=${CONDA_SH:-$HOME/miniforge3/etc/profile.d/conda.sh}
+CONDA_ENV=${CONDA_ENV:-lineshine-wan}
 
-source /mnt/beegfs/home/huang_z/miniforge3/etc/profile.d/conda.sh
-conda activate lineshine-wan
+source "$CONDA_SH"
+conda activate "$CONDA_ENV"
 cd "$CODE"
 export PYTHONPATH=.
 

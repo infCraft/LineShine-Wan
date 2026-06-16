@@ -16,6 +16,8 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from src.common import DEFAULT_SHARED_OPENVID_DIR
+
 
 URL_OR_HTML_RE = re.compile(r"(https?://|www\.|<[^>]+>|&lt;|&gt;|\.com\b|\.net\b|\.org\b)", re.IGNORECASE)
 CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
@@ -673,7 +675,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--meta-dir", required=True)
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--report-root", required=True)
-    parser.add_argument("--shared-openvid-dir", default="/mnt/beegfs/home/yezy/openvid")
+    parser.add_argument("--shared-openvid-dir", default=DEFAULT_SHARED_OPENVID_DIR)
     parser.add_argument("--target-clips", type=int, default=100_000)
     parser.add_argument("--val-clips", type=int, default=2_000)
     parser.add_argument("--avg-clip-bytes", type=int, default=8_500_000)

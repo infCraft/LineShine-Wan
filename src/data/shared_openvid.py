@@ -19,7 +19,16 @@ from typing import Any, Iterable
 if __package__ is None or __package__ == "":
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from src.common import DEFAULT_ROOT, ensure_dir, read_jsonl, sample_id, utc_now, write_json, write_jsonl
+from src.common import (
+    DEFAULT_ROOT,
+    DEFAULT_SHARED_OPENVID_DIR,
+    ensure_dir,
+    read_jsonl,
+    sample_id,
+    utc_now,
+    write_json,
+    write_jsonl,
+)
 
 
 PART_ZIP_RE = re.compile(r"^(OpenVid_part(?P<num>\d+))\.zip$")
@@ -479,7 +488,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--manifest", type=Path, default=root / "data/openvid/meta/openvid_manifest_filtered.jsonl")
-    common.add_argument("--shared-dir", type=Path, default=Path("/mnt/beegfs/home/yezy/openvid"))
+    common.add_argument("--shared-dir", type=Path, default=DEFAULT_SHARED_OPENVID_DIR)
     common.add_argument("--min-freeze-candidates", type=int, default=105_000)
 
     p = sub.add_parser("dry-run", parents=[common])

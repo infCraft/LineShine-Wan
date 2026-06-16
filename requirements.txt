@@ -1,0 +1,17 @@
+# Core runtime for LineShine.
+# Install torch and flash-attn with the CUDA-compatible wheels described in README.md.
+
+numpy<2
+pandas
+pyarrow
+safetensors
+webdataset
+av
+Pillow
+einops
+tensorboard
+transformers>=4.49.0
+accelerate>=1.1.1
+huggingface_hub>=0.24.0
+sentencepiece
+opencv-python-headless
