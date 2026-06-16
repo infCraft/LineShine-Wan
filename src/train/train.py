@@ -100,12 +100,15 @@ def param_groups(model, weight_decay: float):
 
 
 def lr_lambda(args: argparse.Namespace):
+    total_steps = args.lr_total_steps or args.max_steps
+
     def fn(step: int) -> float:
         if step < args.warmup_steps:
             return max(1, step + 1) / max(1, args.warmup_steps)
-        if args.max_steps <= args.warmup_steps:
+        if total_steps <= args.warmup_steps:
             return 1.0
-        progress = (step - args.warmup_steps) / max(1, args.max_steps - args.warmup_steps)
+        progress = (step - args.warmup_steps) / max(1, total_steps - args.warmup_steps)
+        progress = min(1.0, max(0.0, progress))
         cosine = 0.5 * (1.0 + torch.cos(torch.tensor(progress * torch.pi))).item()
         min_ratio = args.min_lr / args.lr
         return min_ratio + (1.0 - min_ratio) * cosine
@@ -301,6 +304,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--auto-resume", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument("--from-scratch", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--max-steps", type=int, default=20)
+    parser.add_argument("--lr-total-steps", type=int, help="Total schedule length; defaults to --max-steps.")
     parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument("--grad-accum-steps", type=int, default=1)
     parser.add_argument("--num-workers", type=int, default=0)

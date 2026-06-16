@@ -1,0 +1,100 @@
+#!/usr/bin/env bash
+#SBATCH -p compute
+#SBATCH --gres=gpu:8
+#SBATCH --cpus-per-gpu=8
+#SBATCH --mem=760G
+#SBATCH --output=../reports/slurm/w5_train_%j.out
+#SBATCH --error=../reports/slurm/w5_train_%j.err
+
+set -euo pipefail
+
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+ROOT=${LINESHINE_ROOT:-$(cd "$SCRIPT_DIR/../.." && pwd)}
+CODE=${LINESHINE_CODE_ROOT:-$ROOT/code}
+CACHE_DIR=${CACHE_DIR:-$ROOT/cache/train}
+CACHE_PATTERN=${CACHE_PATTERN:-train-*.tar}
+RUN_DIR=${RUN_DIR:?RUN_DIR must be set, normally by slurm/submit_w5_chain.sh}
+EMPTY_CONTEXT=${EMPTY_CONTEXT:-$ROOT/cache/prompts/empty.safetensors}
+CONDA_SH=${CONDA_SH:-$HOME/miniforge3/etc/profile.d/conda.sh}
+CONDA_ENV=${CONDA_ENV:-lineshine-wan}
+
+SEGMENT_INDEX=${SEGMENT_INDEX:-0}
+RESUME_MODE=${RESUME_MODE:-resume}
+MAX_STEPS=${MAX_STEPS:-30000}
+LR_TOTAL_STEPS=${LR_TOTAL_STEPS:-30000}
+SAVE_EVERY=${SAVE_EVERY:-2500}
+LOG_EVERY=${LOG_EVERY:-10}
+NUM_WORKERS=${NUM_WORKERS:-0}
+
+mkdir -p "$RUN_DIR/logs" "$ROOT/reports/slurm"
+RUN_LOG="$RUN_DIR/logs/w5_segment_${SEGMENT_INDEX}_job_${SLURM_JOB_ID:-manual}.log"
+exec > >(tee -a "$RUN_LOG") 2>&1
+
+echo "W5 segment index: $SEGMENT_INDEX"
+echo "Slurm job id: ${SLURM_JOB_ID:-manual}"
+echo "Run dir: $RUN_DIR"
+echo "Run log: $RUN_LOG"
+echo "Cache: $CACHE_DIR/$CACHE_PATTERN"
+echo "Target max steps: $MAX_STEPS"
+echo "LR total steps: $LR_TOTAL_STEPS"
+echo "Resume mode: $RESUME_MODE"
+
+if [ ! -d "$CACHE_DIR" ]; then
+  echo "Missing cache dir: $CACHE_DIR" >&2
+  exit 1
+fi
+
+if ! compgen -G "$CACHE_DIR/$CACHE_PATTERN" >/dev/null; then
+  echo "No cache shards matched: $CACHE_DIR/$CACHE_PATTERN" >&2
+  exit 1
+fi
+
+if [ ! -f "$EMPTY_CONTEXT" ]; then
+  echo "Missing empty prompt cache: $EMPTY_CONTEXT" >&2
+  exit 1
+fi
+
+if [ "$RESUME_MODE" = "scratch" ]; then
+  if compgen -G "$RUN_DIR/checkpoints/step_*.pt" >/dev/null; then
+    echo "Refusing scratch run with existing checkpoints in $RUN_DIR/checkpoints" >&2
+    exit 1
+  fi
+  RESUME_ARGS=(--from-scratch)
+elif [ "$RESUME_MODE" = "resume" ]; then
+  if ! compgen -G "$RUN_DIR/checkpoints/step_*.pt" >/dev/null; then
+    echo "Resume segment requires an existing checkpoint in $RUN_DIR/checkpoints" >&2
+    exit 1
+  fi
+  RESUME_ARGS=(--auto-resume --no-from-scratch)
+else
+  echo "RESUME_MODE must be scratch or resume, got: $RESUME_MODE" >&2
+  exit 1
+fi
+
+source "$CONDA_SH"
+conda activate "$CONDA_ENV"
+cd "$CODE"
+export PYTHONPATH=.
+
+torchrun --nproc_per_node=8 src/train/train.py \
+  --cache-dir "$CACHE_DIR" \
+  --cache-pattern "$CACHE_PATTERN" \
+  --run-dir "$RUN_DIR" \
+  --empty-context "$EMPTY_CONTEXT" \
+  "${RESUME_ARGS[@]}" \
+  --max-steps "$MAX_STEPS" \
+  --lr-total-steps "$LR_TOTAL_STEPS" \
+  --batch-size 1 \
+  --grad-accum-steps 8 \
+  --num-workers "$NUM_WORKERS" \
+  --lr 1e-4 \
+  --min-lr 1e-5 \
+  --warmup-steps 1000 \
+  --weight-decay 1e-3 \
+  --clip-grad-norm 1.0 \
+  --cfg-dropout 0.10 \
+  --log-every "$LOG_EVERY" \
+  --save-every "$SAVE_EVERY" \
+  --val-every 0 \
+  --val-batches 512 \
+  --no-tiny-model

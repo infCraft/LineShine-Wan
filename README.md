@@ -73,3 +73,5 @@ SMOKE_MODE=real sbatch slurm/train_smoke.sbatch
 - `data/`、`cache/`、`runs/`、`reports/`、`weights/` 不进 Git。
 - `third_party/Wan2.1` 是子模块，保留其上游结构。
 - 当前仓库定位是组内私有工程仓库，不包含公开发布所需的额外脱敏工作。
+
+更多维护规则见 `docs/project_management.md`。W5 30k 正式预训练使用 `slurm/submit_w5_chain.sh` 提交链式 8 卡作业；该脚本只读取 `LINESHINE_ROOT/cache/train` 和 `LINESHINE_ROOT/cache/prompts/empty.safetensors`，不会访问或提交原始数据。

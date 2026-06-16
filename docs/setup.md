@@ -47,3 +47,13 @@ source configs/env.example.sh
 PYTHONPATH=. pytest -q tests/test_ckpt.py tests/test_batch_adapter.py tests/test_flow_target.py tests/test_shared_openvid.py
 sbatch slurm/train_smoke.sbatch
 ```
+
+## W5 正式预训练
+
+W5 使用 8 卡链式 Slurm 作业。提交脚本会创建新的 `RUN_DIR`，首段从 scratch 启动，后续段显式 `--auto-resume --no-from-scratch`，并把每段 stdout/stderr 通过 `tee` 写入 `RUN_DIR/logs/`。
+
+```bash
+bash slurm/submit_w5_chain.sh
+```
+
+默认链式目标步数为 `5000 10000 15000 20000 25000 30000`，学习率日程按 `LR_TOTAL_STEPS=30000` 计算。训练 cache 默认读取 `LINESHINE_ROOT/cache/train/train-*.tar`，empty prompt 默认读取 `LINESHINE_ROOT/cache/prompts/empty.safetensors`。
