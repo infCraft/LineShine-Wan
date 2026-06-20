@@ -9,7 +9,14 @@
 set -euo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-ROOT=${LINESHINE_ROOT:-$(cd "$SCRIPT_DIR/../.." && pwd)}
+SUBMIT_DIR=${SLURM_SUBMIT_DIR:-$PWD}
+if [ -n "${LINESHINE_ROOT:-}" ]; then
+  ROOT=$LINESHINE_ROOT
+elif [ -d "$SUBMIT_DIR/src" ] && [ -d "$SUBMIT_DIR/slurm" ]; then
+  ROOT=$(cd "$SUBMIT_DIR/.." && pwd)
+else
+  ROOT=$(cd "$SCRIPT_DIR/../.." && pwd)
+fi
 CODE=${LINESHINE_CODE_ROOT:-$ROOT/code}
 CACHE_DIR=${CACHE_DIR:-$ROOT/cache/train}
 CACHE_PATTERN=${CACHE_PATTERN:-train-*.tar}

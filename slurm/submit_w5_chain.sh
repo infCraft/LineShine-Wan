@@ -81,7 +81,15 @@ for step in $CHAIN_STEPS; do
   export LOG_EVERY
   export NUM_WORKERS
 
-  sbatch_out=$(sbatch --parsable "${dependency_args[@]}" "$SBATCH_SCRIPT")
+  sbatch_out=$(sbatch --parsable \
+    -p compute \
+    --gres=gpu:8 \
+    --cpus-per-gpu=8 \
+    --mem=760G \
+    --output=../reports/slurm/w5_train_%j.out \
+    --error=../reports/slurm/w5_train_%j.err \
+    "${dependency_args[@]}" \
+    "$SBATCH_SCRIPT")
   job_id=${sbatch_out%%;*}
   prev_job="$job_id"
 

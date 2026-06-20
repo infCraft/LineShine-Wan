@@ -57,3 +57,5 @@ bash slurm/submit_w5_chain.sh
 ```
 
 默认链式目标步数为 `5000 10000 15000 20000 25000 30000`，学习率日程按 `LR_TOTAL_STEPS=30000` 计算。训练 cache 默认读取 `LINESHINE_ROOT/cache/train/train-*.tar`，empty prompt 默认读取 `LINESHINE_ROOT/cache/prompts/empty.safetensors`。
+
+如果只提交单段调试任务，必须从 `LINESHINE_CODE_ROOT` 下提交，并显式传入 `LINESHINE_ROOT`、`LINESHINE_CODE_ROOT`、`RUN_DIR` 和 `RESUME_MODE`；脚本会优先使用这些环境变量，其次才从 `SLURM_SUBMIT_DIR` 推导项目根目录。
