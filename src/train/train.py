@@ -18,7 +18,7 @@ if __package__ is None or __package__ == "":
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from src.common import DEFAULT_ROOT, WAN_ROOT, ensure_dir, write_json
-from src.train.ckpt import atomic_torch_save, latest_checkpoint, load_checkpoint, save_checkpoint
+from src.train.ckpt import atomic_torch_save, latest_checkpoint, load_checkpoint, save_checkpoint, unwrap_model
 from src.train.dataset import CacheDataset, SyntheticDataset, collate_samples
 from src.train.flow import add_flow_noise, apply_cfg_dropout, sample_logit_normal_sigmas
 from src.train.metrics import JsonlMetrics, TbMetrics
@@ -149,8 +149,8 @@ def evaluate(model, loader, args: argparse.Namespace, device: torch.device, empt
     for idx, batch in enumerate(loader):
         if idx >= max_batches:
             break
-        latents = batch["latents"].to(device=device, dtype=torch.bfloat16)
-        contexts = [ctx.to(device=device, dtype=torch.bfloat16) for ctx in batch["contexts"]]
+        latents = batch["latents"].to(device=device, dtype=torch.bfloat16, non_blocking=True)
+        contexts = [ctx.to(device=device, dtype=torch.bfloat16, non_blocking=True) for ctx in batch["contexts"]]
         sigmas = sample_logit_normal_sigmas(latents.shape[0], device=device)
         noisy, target, timesteps = add_flow_noise(latents, sigmas=sigmas)
         with torch.autocast(device_type=device.type, dtype=torch.bfloat16, enabled=device.type == "cuda"):
@@ -173,19 +173,28 @@ def train(args: argparse.Namespace) -> None:
 
     dataset = make_dataset(args)
     sampler = DistributedSampler(dataset, num_replicas=world, rank=rank, shuffle=True) if distributed else None
-    loader = DataLoader(
-        dataset,
+    loader_kwargs = dict(
         batch_size=args.batch_size,
         shuffle=sampler is None and args.shuffle,
         sampler=sampler,
         num_workers=args.num_workers,
         collate_fn=collate_samples,
         drop_last=True,
+        pin_memory=(device.type == "cuda"),
     )
+    if args.num_workers > 0:
+        # Overlap the (slow, per-sample tarfile.open) cache reads with GPU compute.
+        loader_kwargs["persistent_workers"] = True
+        loader_kwargs["prefetch_factor"] = args.prefetch_factor
+    loader = DataLoader(dataset, **loader_kwargs)
 
     model = create_model(args).to(device)
     if args.grad_checkpointing and hasattr(model, "gradient_checkpointing_enable"):
         model.gradient_checkpointing_enable()
+    if args.compile:
+        # Compile the inner model (before DDP) so DDP gradient hooks and no_sync()
+        # behave normally; checkpoint state_dict is unwrapped via unwrap_model.
+        model = torch.compile(model)
     if distributed:
         model = DDP(model, device_ids=[local_rank], find_unused_parameters=False)
 
@@ -231,8 +240,8 @@ def train(args: argparse.Namespace) -> None:
         for batch in loader:
             if step >= args.max_steps:
                 break
-            latents = batch["latents"].to(device=device, dtype=torch.bfloat16)
-            contexts = [ctx.to(device=device, dtype=torch.bfloat16) for ctx in batch["contexts"]]
+            latents = batch["latents"].to(device=device, dtype=torch.bfloat16, non_blocking=True)
+            contexts = [ctx.to(device=device, dtype=torch.bfloat16, non_blocking=True) for ctx in batch["contexts"]]
             contexts = apply_cfg_dropout(contexts, empty_context, dropout_prob=args.cfg_dropout)
             if args.fixed_noise:
                 if latents.shape[0] != args.batch_size:
@@ -285,7 +294,7 @@ def train(args: argparse.Namespace) -> None:
 
     if rank == 0:
         save_checkpoint(args.run_dir, step=step, model=model, optimizer=optimizer, scheduler=scheduler, scaler=None, args=args)
-        module = model.module if hasattr(model, "module") else model
+        module = unwrap_model(model)
         atomic_torch_save(module.state_dict(), args.run_dir / "wan_model_latest_state_dict.pt")
         tb.close()
         print(json.dumps({"step": step, "run_dir": str(args.run_dir)}, sort_keys=True))
@@ -308,6 +317,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument("--grad-accum-steps", type=int, default=1)
     parser.add_argument("--num-workers", type=int, default=0)
+    parser.add_argument("--prefetch-factor", type=int, default=4, help="DataLoader prefetch batches per worker (only used when num-workers>0)")
     parser.add_argument("--shuffle", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--dataset-limit", type=int)
     parser.add_argument("--lr", type=float, default=1e-4)
@@ -338,6 +348,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--tiny-heads", type=int, default=4)
     parser.add_argument("--tiny-layers", type=int, default=2)
     parser.add_argument("--grad-checkpointing", action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument("--compile", action=argparse.BooleanOptionalAction, default=False, help="torch.compile the model (fixed-shape single-bucket only)")
     parser.add_argument("--fixed-noise", action=argparse.BooleanOptionalAction, default=False)
     parser.set_defaults(func=train)
     return parser

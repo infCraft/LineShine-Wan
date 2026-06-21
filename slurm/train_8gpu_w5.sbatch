@@ -31,7 +31,13 @@ MAX_STEPS=${MAX_STEPS:-30000}
 LR_TOTAL_STEPS=${LR_TOTAL_STEPS:-30000}
 SAVE_EVERY=${SAVE_EVERY:-2500}
 LOG_EVERY=${LOG_EVERY:-10}
-NUM_WORKERS=${NUM_WORKERS:-0}
+# Throughput knobs (A-class optimizations; see docs/throughput.md):
+#   eff batch = BATCH_SIZE * GRAD_ACCUM_STEPS * 8 GPUs. Defaults keep eff batch = 64.
+NUM_WORKERS=${NUM_WORKERS:-6}
+PREFETCH_FACTOR=${PREFETCH_FACTOR:-4}
+BATCH_SIZE=${BATCH_SIZE:-2}
+GRAD_ACCUM_STEPS=${GRAD_ACCUM_STEPS:-4}
+COMPILE=${COMPILE:-1}
 
 mkdir -p "$RUN_DIR/logs" "$ROOT/reports/slurm"
 RUN_LOG="$RUN_DIR/logs/w5_segment_${SEGMENT_INDEX}_job_${SLURM_JOB_ID:-manual}.log"
@@ -82,6 +88,10 @@ source "$CONDA_SH"
 conda activate "$CONDA_ENV"
 cd "$CODE"
 export PYTHONPATH=.
+# Reduce allocator fragmentation; lets larger per-GPU batch fit under 80GB.
+export PYTORCH_CUDA_ALLOC_CONF=${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}
+
+if [ "$COMPILE" = "1" ]; then COMPILE_ARG=--compile; else COMPILE_ARG=--no-compile; fi
 
 torchrun --nproc_per_node=8 src/train/train.py \
   --cache-dir "$CACHE_DIR" \
@@ -91,9 +101,11 @@ torchrun --nproc_per_node=8 src/train/train.py \
   "${RESUME_ARGS[@]}" \
   --max-steps "$MAX_STEPS" \
   --lr-total-steps "$LR_TOTAL_STEPS" \
-  --batch-size 1 \
-  --grad-accum-steps 8 \
+  --batch-size "$BATCH_SIZE" \
+  --grad-accum-steps "$GRAD_ACCUM_STEPS" \
   --num-workers "$NUM_WORKERS" \
+  --prefetch-factor "$PREFETCH_FACTOR" \
+  $COMPILE_ARG \
   --lr 1e-4 \
   --min-lr 1e-5 \
   --warmup-steps 1000 \

@@ -8,8 +8,26 @@ from pathlib import Path
 from typing import Any
 
 import torch
+from torch.nn.parallel import DistributedDataParallel as DDP
 
 from src.common import ensure_dir
+
+
+def unwrap_model(model):
+    """Return the underlying module, stripping DDP and torch.compile wrappers.
+
+    torch.compile wraps a module in an OptimizedModule whose state_dict keys are
+    prefixed with ``_orig_mod.``; stripping it keeps checkpoints compatible with
+    the plain WanModel used by the sampler. Handles either wrap order.
+    """
+    m = model
+    while True:
+        if isinstance(m, DDP):
+            m = m.module
+        elif hasattr(m, "_orig_mod"):
+            m = m._orig_mod
+        else:
+            return m
 
 
 def _jsonable(value: Any) -> Any:
@@ -77,7 +95,7 @@ def save_checkpoint(
         _replace_latest_symlink(path)
         return path
 
-    module = model.module if hasattr(model, "module") else model
+    module = unwrap_model(model)
     raw_args = _jsonable(vars(args) if hasattr(args, "__dict__") else args)
     payload = {
         "step": step,
@@ -105,7 +123,7 @@ def load_checkpoint(
     restore_rng: bool = True,
 ) -> int:
     data = torch.load(path, map_location=map_location, weights_only=False)
-    module = model.module if hasattr(model, "module") else model
+    module = unwrap_model(model)
     module.load_state_dict(data["model"])
     if optimizer is not None and data.get("optimizer") is not None:
         optimizer.load_state_dict(data["optimizer"])
