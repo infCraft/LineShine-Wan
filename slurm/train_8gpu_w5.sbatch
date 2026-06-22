@@ -31,6 +31,11 @@ MAX_STEPS=${MAX_STEPS:-30000}
 LR_TOTAL_STEPS=${LR_TOTAL_STEPS:-30000}
 SAVE_EVERY=${SAVE_EVERY:-2500}
 LOG_EVERY=${LOG_EVERY:-10}
+OPTIMIZER=${OPTIMIZER:-adamw}
+MUON_LR=${MUON_LR:-0.02}
+MUON_MOMENTUM=${MUON_MOMENTUM:-0.95}
+WARMUP_STEPS=${WARMUP_STEPS:-1000}
+LR=${LR:-1e-4}
 # Throughput knobs (A-class optimizations; see docs/throughput.md):
 #   eff batch = BATCH_SIZE * GRAD_ACCUM_STEPS * 8 GPUs. Defaults keep eff batch = 64.
 NUM_WORKERS=${NUM_WORKERS:-6}
@@ -106,10 +111,13 @@ torchrun --nproc_per_node=8 src/train/train.py \
   --num-workers "$NUM_WORKERS" \
   --prefetch-factor "$PREFETCH_FACTOR" \
   $COMPILE_ARG \
-  --lr 1e-4 \
+  --lr "$LR" \
   --min-lr 1e-5 \
-  --warmup-steps 1000 \
+  --warmup-steps "$WARMUP_STEPS" \
   --weight-decay 1e-3 \
+  --optimizer "$OPTIMIZER" \
+  --muon-lr "$MUON_LR" \
+  --muon-momentum "$MUON_MOMENTUM" \
   --clip-grad-norm 1.0 \
   --cfg-dropout 0.10 \
   --log-every "$LOG_EVERY" \

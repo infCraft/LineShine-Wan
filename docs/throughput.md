@@ -38,3 +38,13 @@ no recompiles; multi-bucket / variable resolution will recompile per shape — r
 `sbatch slurm/profile_speed.sbatch` (single GPU) reports compute-only / data-only /
 end-to-end throughput and an approximate MFU across a batch-size sweep. Add
 `COMPILE_FLAG=--compile` to include the compiled compute path.
+
+## Muon optimizer (B-class, experimental)
+
+`src/train/train.py` now accepts `--optimizer muon`; the default remains `--optimizer adamw`.
+Muon mode uses one combined optimizer so checkpointing, scheduler stepping, zero-grad, and
+LR logging keep the same single-optimizer interface. Hidden 2D attention/FFN weight matrices
+go to Muon, while norms, biases, embeddings, head, modulation, conv, projection, and all 1D
+parameters stay on AdamW. Tune Muon with `--muon-lr` (default `0.02`) and `--muon-momentum`
+(default `0.95`); auxiliary AdamW uses the normal `--lr` and `--weight-decay`. Treat this as
+fixed-shape single-bucket only until multi-shape throughput and compile behavior are retested.

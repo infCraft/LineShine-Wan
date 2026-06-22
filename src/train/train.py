@@ -23,6 +23,7 @@ from src.train.dataset import CacheDataset, SyntheticDataset, collate_samples
 from src.train.flow import add_flow_noise, apply_cfg_dropout, sample_logit_normal_sigmas
 from src.train.metrics import JsonlMetrics, TbMetrics
 from src.train.model_adapter import call_wan_model
+from src.train.muon import MuonWithAuxAdam
 
 
 def add_wan_to_path() -> None:
@@ -97,6 +98,35 @@ def param_groups(model, weight_decay: float):
         {"params": decay, "weight_decay": weight_decay},
         {"params": no_decay, "weight_decay": 0.0},
     ]
+
+
+def build_optimizer(model, args: argparse.Namespace) -> torch.optim.Optimizer:
+    if args.optimizer == "adamw":
+        return torch.optim.AdamW(param_groups(model, args.weight_decay), lr=args.lr, betas=(0.9, 0.95))
+
+    EXCLUDE = ("embedding", "head", "modulation", "projection")
+    muon_params = []
+    adam_decay = []
+    adam_no_decay = []
+    for name, param in model.named_parameters():
+        if not param.requires_grad:
+            continue
+        name_lower = name.lower()
+        is_aux_1d = param.ndim < 2 or name.endswith(".bias") or "norm" in name_lower or "modulation" in name
+        if param.ndim == 2 and not is_aux_1d and not any(key in name_lower for key in EXCLUDE):
+            muon_params.append(param)
+        elif is_aux_1d:
+            adam_no_decay.append(param)
+        else:
+            adam_decay.append(param)
+
+    groups = [
+        dict(params=muon_params, use_muon=True, lr=args.muon_lr, momentum=args.muon_momentum, weight_decay=0.0),
+        dict(params=adam_decay, use_muon=False, lr=args.lr, betas=(0.9, 0.95), eps=1e-8, weight_decay=args.weight_decay),
+        dict(params=adam_no_decay, use_muon=False, lr=args.lr, betas=(0.9, 0.95), eps=1e-8, weight_decay=0.0),
+    ]
+    groups = [group for group in groups if group["params"]]
+    return MuonWithAuxAdam(groups)
 
 
 def lr_lambda(args: argparse.Namespace):
@@ -198,7 +228,18 @@ def train(args: argparse.Namespace) -> None:
     if distributed:
         model = DDP(model, device_ids=[local_rank], find_unused_parameters=False)
 
-    optimizer = torch.optim.AdamW(param_groups(model, args.weight_decay), lr=args.lr, betas=(0.9, 0.95))
+    optimizer = build_optimizer(model, args)
+    if rank == 0 and args.optimizer == "muon":
+        optimizer_groups = [
+            {
+                "index": idx,
+                "params": sum(param.numel() for param in group["params"]),
+                "tensors": len(group["params"]),
+                "use_muon": bool(group.get("use_muon", False)),
+            }
+            for idx, group in enumerate(optimizer.param_groups)
+        ]
+        print(json.dumps({"optimizer": args.optimizer, "param_groups": optimizer_groups}, sort_keys=True))
     scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda(args))
     empty_context = load_empty_context(args, device, torch.bfloat16)
     metrics = JsonlMetrics(args.run_dir / "metrics.jsonl") if rank == 0 else None
@@ -324,6 +365,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--min-lr", type=float, default=1e-5)
     parser.add_argument("--warmup-steps", type=int, default=0)
     parser.add_argument("--weight-decay", type=float, default=1e-3)
+    parser.add_argument("--optimizer", choices=["adamw", "muon"], default="adamw")
+    parser.add_argument("--muon-lr", type=float, default=0.02)
+    parser.add_argument("--muon-momentum", type=float, default=0.95)
     parser.add_argument("--clip-grad-norm", type=float, default=1.0)
     parser.add_argument("--cfg-dropout", type=float, default=0.10)
     parser.add_argument("--log-every", type=int, default=1)
