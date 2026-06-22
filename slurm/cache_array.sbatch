@@ -16,6 +16,9 @@ CACHE_DIR=${CACHE_DIR:-$ROOT/cache/train}
 PREFIX=${PREFIX:-train}
 NUM_SHARDS=${NUM_SHARDS:-${SLURM_ARRAY_TASK_COUNT:-1}}
 SHARD_INDEX=${SLURM_ARRAY_TASK_ID:-0}
+FRAMES=${FRAMES:-49}
+TARGET_FPS=${TARGET_FPS:-16.0}
+IMAGE_SIZE=${IMAGE_SIZE:-256}
 CONDA_SH=${CONDA_SH:-$HOME/miniforge3/etc/profile.d/conda.sh}
 CONDA_ENV=${CONDA_ENV:-lineshine-wan}
 
@@ -30,4 +33,7 @@ python src/data/preprocess_cache.py \
   --prefix "$PREFIX" \
   --num-shards "$NUM_SHARDS" \
   --shard-index "$SHARD_INDEX" \
+  --frames "$FRAMES" \
+  --target-fps "$TARGET_FPS" \
+  --image-size "$IMAGE_SIZE" \
   --device cuda

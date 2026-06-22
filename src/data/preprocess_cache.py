@@ -75,6 +75,7 @@ def decode_video_grid(
     frames: int = 49,
     target_fps: float = 16.0,
     image_size: int = 256,
+    clip_start_sec: float | None = None,
 ) -> tuple[torch.Tensor, dict[str, Any]]:
     container = av.open(str(path))
     try:
@@ -103,7 +104,17 @@ def decode_video_grid(
     if duration + 1e-6 < window:
         raise ValueError(f"{path} duration {duration:.3f}s is shorter than target window {window:.3f}s")
 
-    start = timestamps[0] + max(0.0, duration - window) / 2.0
+    if clip_start_sec is None:
+        start = timestamps[0] + max(0.0, duration - window) / 2.0
+        sampling_mode = "center"
+    else:
+        start = timestamps[0] + float(clip_start_sec)
+        sampling_mode = "fixed_start"
+        if start < timestamps[0] - 1e-6 or start + window > timestamps[-1] + 1e-6:
+            raise ValueError(
+                f"{path} clip_start_sec={clip_start_sec:.3f}s cannot fit target window {window:.3f}s "
+                f"in decoded duration {duration:.3f}s"
+            )
     target_times = start + np.arange(frames, dtype=np.float64) / target_fps
     idxs = np.searchsorted(timestamps, target_times, side="left")
     chosen = []
@@ -122,6 +133,8 @@ def decode_video_grid(
         "decoded_frames": len(decoded),
         "sampled_frames": frames,
         "target_fps": target_fps,
+        "sampling_mode": sampling_mode,
+        "requested_clip_start_sec": clip_start_sec,
         "sample_start_sec": start,
         "sample_end_sec": float(target_times[-1]),
         "resize_short_side": image_size,
@@ -171,7 +184,15 @@ def encode_sample(
     image_size: int,
 ) -> tuple[dict[str, torch.Tensor], dict[str, Any]]:
     path = Path(row["local_path"])
-    video, video_meta = decode_video_grid(path, frames=frames, target_fps=target_fps, image_size=image_size)
+    clip_start = row.get("clip_start_sec")
+    clip_start_sec = float(clip_start) if clip_start is not None else None
+    video, video_meta = decode_video_grid(
+        path,
+        frames=frames,
+        target_fps=target_fps,
+        image_size=image_size,
+        clip_start_sec=clip_start_sec,
+    )
     caption = str(row.get("caption_clean") or row.get("caption") or row.get("raw_caption") or "")
 
     if fake_encoders:
@@ -195,6 +216,10 @@ def encode_sample(
         "caption": caption,
         "raw_caption": row.get("raw_caption"),
         "quality_score": row.get("quality_score"),
+        "clip_index": row.get("clip_index"),
+        "clip_start_sec": row.get("clip_start_sec"),
+        "clip_duration_sec": row.get("clip_duration_sec"),
+        "segment_source_sample_id": row.get("segment_source_sample_id"),
         "video_preprocess": video_meta,
     }
     return tensors, meta
