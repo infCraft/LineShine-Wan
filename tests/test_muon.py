@@ -105,6 +105,26 @@ def test_step_runs():
     assert torch.isfinite(adam_param).all()
 
 
+def test_muon_weight_decay_shrinks():
+    param_no_decay = torch.nn.Parameter(torch.ones(8, 8))
+    param_decay = torch.nn.Parameter(torch.ones(8, 8))
+    optimizer_no_decay = MuonWithAuxAdam(
+        [dict(params=[param_no_decay], use_muon=True, lr=0.1, momentum=0.95, weight_decay=0.0)]
+    )
+    optimizer_decay = MuonWithAuxAdam(
+        [dict(params=[param_decay], use_muon=True, lr=0.1, momentum=0.95, weight_decay=0.5)]
+    )
+    start = param_no_decay.detach().clone()
+
+    param_no_decay.grad = torch.zeros_like(param_no_decay)
+    param_decay.grad = torch.zeros_like(param_decay)
+    optimizer_no_decay.step()
+    optimizer_decay.step()
+
+    assert torch.equal(param_no_decay, start)
+    assert torch.linalg.vector_norm(param_decay) < torch.linalg.vector_norm(param_no_decay)
+
+
 def test_muon_requires_2d():
     param = torch.nn.Parameter(torch.randn(8))
     try:
@@ -118,5 +138,6 @@ if __name__ == "__main__":
     test_partition_is_complete_and_disjoint()
     test_newtonschulz_orthogonal()
     test_step_runs()
+    test_muon_weight_decay_shrinks()
     test_muon_requires_2d()
     print("OK")

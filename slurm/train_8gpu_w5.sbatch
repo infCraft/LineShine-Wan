@@ -34,6 +34,7 @@ LOG_EVERY=${LOG_EVERY:-10}
 OPTIMIZER=${OPTIMIZER:-adamw}
 MUON_LR=${MUON_LR:-0.02}
 MUON_MOMENTUM=${MUON_MOMENTUM:-0.95}
+MUON_WEIGHT_DECAY=${MUON_WEIGHT_DECAY:-0.01}
 WARMUP_STEPS=${WARMUP_STEPS:-1000}
 LR=${LR:-1e-4}
 # Throughput knobs (A-class optimizations; see docs/throughput.md):
@@ -118,6 +119,7 @@ torchrun --nproc_per_node=8 src/train/train.py \
   --optimizer "$OPTIMIZER" \
   --muon-lr "$MUON_LR" \
   --muon-momentum "$MUON_MOMENTUM" \
+  --muon-weight-decay "$MUON_WEIGHT_DECAY" \
   --clip-grad-norm 1.0 \
   --cfg-dropout 0.10 \
   --log-every "$LOG_EVERY" \

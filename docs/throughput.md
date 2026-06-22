@@ -45,6 +45,9 @@ end-to-end throughput and an approximate MFU across a batch-size sweep. Add
 Muon mode uses one combined optimizer so checkpointing, scheduler stepping, zero-grad, and
 LR logging keep the same single-optimizer interface. Hidden 2D attention/FFN weight matrices
 go to Muon, while norms, biases, embeddings, head, modulation, conv, projection, and all 1D
-parameters stay on AdamW. Tune Muon with `--muon-lr` (default `0.02`) and `--muon-momentum`
-(default `0.95`); auxiliary AdamW uses the normal `--lr` and `--weight-decay`. Treat this as
-fixed-shape single-bucket only until multi-shape throughput and compile behavior are retested.
+parameters stay on AdamW. Tune Muon with `--muon-lr` (default `0.02`), `--muon-momentum`
+(default `0.95`), and `--muon-weight-decay` (default `0.01`, or `MUON_WEIGHT_DECAY` in the
+W5 sbatch); auxiliary AdamW uses the normal `--lr` and `--weight-decay`. The Muon decay default
+follows the long-run norm-drift concern for constant-magnitude orthogonalized updates; Kimi
+"Muon is Scalable" and HunyuanVideo 1.5 both use wd around `0.01`. Treat this as fixed-shape
+single-bucket only until multi-shape throughput and compile behavior are retested.

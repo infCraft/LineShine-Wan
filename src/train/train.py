@@ -121,7 +121,7 @@ def build_optimizer(model, args: argparse.Namespace) -> torch.optim.Optimizer:
             adam_decay.append(param)
 
     groups = [
-        dict(params=muon_params, use_muon=True, lr=args.muon_lr, momentum=args.muon_momentum, weight_decay=0.0),
+        dict(params=muon_params, use_muon=True, lr=args.muon_lr, momentum=args.muon_momentum, weight_decay=args.muon_weight_decay),
         dict(params=adam_decay, use_muon=False, lr=args.lr, betas=(0.9, 0.95), eps=1e-8, weight_decay=args.weight_decay),
         dict(params=adam_no_decay, use_muon=False, lr=args.lr, betas=(0.9, 0.95), eps=1e-8, weight_decay=0.0),
     ]
@@ -236,6 +236,7 @@ def train(args: argparse.Namespace) -> None:
                 "params": sum(param.numel() for param in group["params"]),
                 "tensors": len(group["params"]),
                 "use_muon": bool(group.get("use_muon", False)),
+                "weight_decay": group.get("weight_decay", 0.0),
             }
             for idx, group in enumerate(optimizer.param_groups)
         ]
@@ -368,6 +369,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--optimizer", choices=["adamw", "muon"], default="adamw")
     parser.add_argument("--muon-lr", type=float, default=0.02)
     parser.add_argument("--muon-momentum", type=float, default=0.95)
+    parser.add_argument("--muon-weight-decay", type=float, default=0.01, help="Weight decay for the Muon param group only")
     parser.add_argument("--clip-grad-norm", type=float, default=1.0)
     parser.add_argument("--cfg-dropout", type=float, default=0.10)
     parser.add_argument("--log-every", type=int, default=1)
