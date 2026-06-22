@@ -249,8 +249,9 @@ def write_cache(args: argparse.Namespace) -> None:
     if not args.fake_encoders:
         vae, text_encoder = load_components(args.weights_dir, device, dtype)
 
-    shard_idx = args.shard_index or 0
-    manifest_path = args.cache_dir / f"{args.prefix}_{shard_idx:06d}_cache_manifest.json"
+    initial_shard_idx = args.shard_start_index + (args.shard_index or 0)
+    shard_idx = initial_shard_idx
+    manifest_path = args.cache_dir / f"{args.prefix}_{initial_shard_idx:06d}_cache_manifest.json"
     if args.skip_existing and manifest_path.exists():
         print(json.dumps({"skipped": True, "manifest": str(manifest_path)}))
         return
@@ -310,7 +311,7 @@ def write_cache(args: argparse.Namespace) -> None:
     }
     write_json(manifest_path, manifest)
     write_json(args.cache_dir / f"{args.prefix}_cache_manifest.json", manifest)
-    with (args.cache_dir / f"{args.prefix}_{args.shard_index or 0:06d}_failed.jsonl").open("w", encoding="utf-8") as f:
+    with (args.cache_dir / f"{args.prefix}_{initial_shard_idx:06d}_failed.jsonl").open("w", encoding="utf-8") as f:
         for failure in failures:
             f.write(json.dumps(failure, ensure_ascii=False, sort_keys=True) + "\n")
     print(json.dumps({"sample_count": sample_count, "failure_count": len(failures), "cache_dir": str(args.cache_dir)}))
@@ -328,6 +329,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--end", type=int)
     parser.add_argument("--shard-size", type=int, default=128)
     parser.add_argument("--shard-index", type=int)
+    parser.add_argument("--shard-start-index", type=int, default=0)
     parser.add_argument("--num-shards", type=int)
     parser.add_argument("--skip-existing", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--frames", type=int, default=49)
