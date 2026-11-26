@@ -1,0 +1,13 @@
+# Install in the verified MPI-enabled PyTorch environment, not in place of it.
+numpy>=1.23.5,<2
+Pillow>=9.1
+safetensors
+einops
+diffusers>=0.31.0
+transformers>=4.49.0
+easydict
+ftfy
+regex
+sentencepiece
+imageio-ffmpeg
+ninja
